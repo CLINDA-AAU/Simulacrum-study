@@ -16,6 +16,8 @@ library(splines)
 library(patchwork)
 library(knitr)
 
+setwd("C:/Users/upc6/OneDrive - Region Nordjylland/Lars PhD/Projekter/simulacrum")
+
 options(scipen=0)
 
 sact_patient <- read_csv("data/data/sim_sact_patient.csv")
@@ -113,7 +115,7 @@ B <- tmp |>
   dplyr::select(age,seps) |> 
   pivot_longer(names_to = "group", values_to ="stratification",-seps) |> 
   group_by(group, seps) |> 
-  summarize(aa =paste0(round(mean(stratification, na.rm=T),1)," (",
+  summarize(aa =paste0(round(median(stratification, na.rm=T),1)," (",
                        round(quantile(stratification, probs=0.25,na.rm=T)[[1]]),":",
                        round(quantile(stratification, probs=0.75,na.rm=T)[[1]]),")")) |> 
   pivot_wider(names_from = seps, values_from = aa)
@@ -241,5 +243,33 @@ fit <- tmle(Y = sact_4$trial_all,
             cvQinit = FALSE)
 
 
+```
+
+```{r}
+sact_4_samp <- sact_4[sample(nrow(sact_4),10000),]
+
+df <- bind_rows(sact_4_samp, sact_4_samp |> mutate(diag = "Total")) |> 
+  mutate(ttb = trial_all*1,
+         rs = if_else(seps=="vulnerable",1,0)) |> 
+  group_by(diag) |> 
+  group_modify(~ {
+    tmle_fit <- tmle::tmle(Y = .x$ttb,
+                           A = .x$rs,
+                           W = .x[,c("AGE","SEX","year")],
+                           Q.SL.library = "SL.randomForest",
+                           family="binomial",V.Q = 3)
+    tibble(estimate = tmle_fit$estimates$OR$psi,
+           lower = tmle_fit$estimates$OR$CI[1],
+           upper = tmle_fit$estimates$OR$CI[2],
+           pp = tmle_fit$estimates$OR$pvalue,
+           n = nrow(.x),
+           ntrial = sum(.x$trial_all),
+           par = round(ntrial/n*100,1)) |>
+      arrange(desc(n)) |> 
+      mutate(est = paste0(round(estimate,2)," (",round(lower,2),"-",round(upper,2),")"),
+             p.value = format.pval(pp, nsmall=4)) |> 
+      select(-upper,-lower,-estimate,-pp)
+  })
+df |> arrange(desc(n)) |> kable()
 ```
 
