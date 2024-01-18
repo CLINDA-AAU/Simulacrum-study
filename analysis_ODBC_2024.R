@@ -9,6 +9,15 @@ library(forestmodel)
 library(broom)
 library(knitr)
 
+rf <- function(data, dig = 2) {
+  format(round(data, digits = dig), nsmall = dig)
+}
+
+# ODBC --------------------------------------------------------------------
+
+
+# Temp --------------------------------------------------------------------
+
 setwd("C:/Users/upc6/Documents/GitHub/Simulacrum-study")
 
 sact_patient <- read_csv("C:/Users/upc6/Desktop/simu_studie/data/data/sim_sact_patient.csv")
@@ -20,31 +29,34 @@ sact_tumour  <- read_csv("C:/Users/upc6/Desktop/simu_studie/data/data/sim_sact_t
 sact_regimen <- read_csv("C:/Users/upc6/Desktop/simu_studie/data/data/sim_sact_regimen.csv",
                          col_select = c(MERGED_PATIENT_ID, MERGED_TUMOUR_ID, CLINICAL_TRIAL, HEIGHT_AT_START_OF_REGIMEN, WEIGHT_AT_START_OF_REGIMEN))
 
-sact <- sact_patient |> 
+sact_1 <- sact_patient |> 
   left_join(av_tumour,    by = c("LINK_NUMBER" = "LINKNUMBER")) |> 
   left_join(sact_tumour,  by = c("MERGED_PATIENT_ID")) |> 
   left_join(sact_regimen, by = c("MERGED_PATIENT_ID","MERGED_TUMOUR_ID"))
 
 #sact <- read_csv("~/GitHub/Simulacrum-study/_SELECT_sp_avt_PATIENTID_avt_DIAGNOSISDATEBEST_avt_SITE_ICD10_O2_202312121035.csv") |> select(-NHS_NUMBER)
 
-sact_2 <- sact |> 
+
+# Datamanagement ----------------------------------------------------------
+
+sact_2 <- sact_1 |> 
   mutate(PD = if_else(nchar(PRIMARY_DIAGNOSIS) == 3, paste0(PRIMARY_DIAGNOSIS,"0"), PRIMARY_DIAGNOSIS),
-         ip = as.numeric(substr(PD,2,3)),
-         diag = case_when(ip %in% c(47,69:72)       ~ "Eye, brain and CNS",
-                          ip %in% c(50)             ~ "Breast",
-                          ip %in% c(51:58)          ~ "Gynaecological",
-                          ip %in% c(0:14,30:32)     ~ "Head and Neck",
-                          ip %in% c(18:21)          ~ "Lower gastrointestinal",
-                          ip %in% c(33:34,37:39,45) ~ "Lung and bronchus",
-                          ip %in% c(15:17,22:25)    ~ "Upper gastrointestinal",
-                          ip %in% c(60:68)          ~ "Urology",
-                          ip %in% c(43:44)          ~ "Skin",
-                          ip %in% c(81:86,90:96)    ~ "Haematologic",
-                          TRUE                      ~ "Ill-defined and unspecified")) |> 
+         ip = as.numeric(substr(PD, 2, 3)),
+         diag = case_when(ip %in% c(47, 69:72)       ~ "Eye, brain and CNS",
+                          ip %in% c(50)              ~ "Breast",
+                          ip %in% c(51:58)           ~ "Gynaecological",
+                          ip %in% c(0:14, 30:32)     ~ "Head and Neck",
+                          ip %in% c(18:21)           ~ "Lower gastrointestinal",
+                          ip %in% c(33:34, 37:39,45) ~ "Lung and bronchus",
+                          ip %in% c(15:17, 22:25)    ~ "Upper gastrointestinal",
+                          ip %in% c(60:68)           ~ "Urology",
+                          ip %in% c(43:44)           ~ "Skin",
+                          ip %in% c(81:86, 90:96)    ~ "Haematologic",
+                          TRUE                       ~ "Ill-defined and unspecified")) |> 
   filter(diag != "Haematologic", 
          !is.na(MERGED_TUMOUR_ID), 
-         substr(PD,1,1) == "C", 
-         between(AGE,18,130))
+         substr(PD, 1, 1) == "C", 
+         between(AGE, 18, 130))
 
 sact_3 <- sact_2 |> 
   group_by(PATIENTID) |> 
@@ -52,20 +64,19 @@ sact_3 <- sact_2 |>
   summarize(across(everything(), first))
 
 sact_4 <- sact_3 |> 
-  mutate(sex_group = if_else(SEX == 2, "Female","Male"), 
-         age_group = case_when(between(AGE, 18,44) ~ "18-44",
-                               between(AGE, 45,64) ~ "45-64",
-                               between(AGE, 65,74) ~ "65-74",
-                               between(AGE, 75,130) ~ "> 75"),
-         seps = if_else(QUINTILE_2015 == "5 - most deprived", "vulnerable","non-vulnerable"),
+  mutate(sex_group = if_else(SEX == 2, "Female", "Male"), 
+         age_group = case_when(between(AGE, 18, 44)  ~ "18-44",
+                               between(AGE, 45, 64)  ~ "45-64",
+                               between(AGE, 65, 74)  ~ "65-74",
+                               between(AGE, 75, 130) ~ "> 75"),
+         seps = if_else(QUINTILE_2015 == "5 - most deprived", "vulnerable", "non-vulnerable"),
          year = year(DIAGNOSISDATEBEST),
-         tnm = substr(STAGE_BEST,0,1),
+         tnm = substr(STAGE_BEST, 0, 1),
          tnm = case_when(tnm == "1" ~ "I",
                          tnm == "2" ~ "II",
                          tnm == "3" ~ "III",
                          tnm == "4" ~ "IV",
-                         TRUE ~ "Not recorded"
-         ),
+                         TRUE ~ "Not recorded"),
          ACE27 = if_else(ACE27 == 9 | is.na(ACE27), "Not recorded", as.character(ACE27)),
          com = as.factor(ACE27),
          Total = "total")
@@ -73,7 +84,6 @@ sact_4 <- sact_3 |>
 
 
 # Table 1 -----------------------------------------------------------------
-
 
 facts <- c("Total", "trial_all", "sex_group", "age_group", "seps", "diag", "com","tnm")
 
@@ -124,8 +134,7 @@ t1 |> cat(file="t1.html")
 
 # Table 2 -----------------------------------------------------------------
 
-tmp <- bind_rows(sact_4 |> mutate(diag = "Total"), 
-                 sact_4) |> 
+tmp <- bind_rows(sact_4 |> mutate(diag = "Total"), sact_4) |> 
   mutate(seps = fct_relevel(seps, c("total", "non-vulnerable", "vulnerable")))
 
 t2 <- tmp |> 
@@ -156,7 +165,7 @@ t2 |>
 
 # Estimated to take 5-6 hours on a average labtop
 
-#sact_4 <- sact_4[sample(nrow(sact_4),10000),]
+sact_4 <- sact_4[sample(nrow(sact_4),10000),]
 
 df <- bind_rows(sact_4, sact_4 |> mutate(diag = "Total")) |> 
   mutate(ttb = trial_all*1,
