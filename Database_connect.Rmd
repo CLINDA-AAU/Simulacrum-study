@@ -27,6 +27,8 @@ query <- "SELECT
   at.AGE,
   at.SEX,
   at.QUINTILE_2015,
+  at.STAGE_BEST,
+  at.ACE27,
   st.MERGED_TUMOUR_ID,
   st.PRIMARY_DIAGNOSIS,
   sr.CLINICAL_TRIAL,
