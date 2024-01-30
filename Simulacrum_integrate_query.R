@@ -1,20 +1,24 @@
-# Datamanagement ----------------------------------------------------------
+# beskrivelse
+#forfattere, dato, output, filnavne
+
+
+# Libraries and functions -------------------------------------------------
+
 
 library(tidyverse)
 library(lubridate)
-library(forestmodel)
 library(broom)
 library(knitr)
 library(DBI)
-
+library(odbc)
+library(dbarts)
+library(tmle)
 
 rf <- function(data, dig = 2) {
   format(round(data, digits = dig), nsmall = dig)
 }
 
 # ODBC --------------------------------------------------------------------
-
-
 
 my_oracle <- dbConnect(odbc::odbc(),
                        Driver = "Oracle in instantclient_21_12",
@@ -23,6 +27,8 @@ my_oracle <- dbConnect(odbc::odbc(),
                        PWD = "test1234",
                        trusted_connection = TRUE)
 
+# In the following "ANONYMOUS.SIM_*" should be replaced with the schema name
+# and correct table name
 
 query <- "SELECT
   sp.MERGED_PATIENT_ID,
@@ -56,15 +62,13 @@ ON
   sp.MERGED_PATIENT_ID = sr.MERGED_PATIENT_ID AND st.MERGED_TUMOUR_ID = sr.MERGED_TUMOUR_ID"
 
 
-
 sact_1 <- dbGetQuery(my_oracle, query)
 
 
 # Datamanagement ----------------------------------------------------------
 
 sact_2 <- sact_1 |> 
-  mutate(PD = if_else(nchar(PRIMARY_DIAGNOSIS) == 3, paste0(PRIMARY_DIAGNOSIS,"0"), PRIMARY_DIAGNOSIS),
-         ip = as.numeric(substr(PD, 2, 3)),
+  mutate(ip = as.numeric(substr(PRIMARY_DIAGNOSIS, 2, 3)),
          diag = case_when(ip %in% c(47, 69:72)       ~ "Eye, brain and CNS",
                           ip %in% c(50)              ~ "Breast",
                           ip %in% c(51:58)           ~ "Gynaecological",
@@ -78,15 +82,16 @@ sact_2 <- sact_1 |>
                           TRUE                       ~ "Ill-defined and unspecified")) |> 
   filter(diag != "Haematologic", 
          !is.na(MERGED_TUMOUR_ID), 
-         substr(PD, 1, 1) == "C", 
-         between(AGE, 18, 130))
+         substr(PRIMARY_DIAGNOSIS, 1, 1) == "C", 
+         AGE >= 18)
 
 sact_3 <- sact_2 |> 
   group_by(PATIENTID) |> 
-  mutate(trial_all = any(CLINICAL_TRIAL %in% c("y", "Y"))) |> 
+  mutate(trial_all = any(CLINICAL_TRIAL %in% c("y", "Y","01","1"))) |> #We assume the following, y,Y,01,1 are indicators for clinical trial
   summarize(across(everything(), first))
 
 sact_4 <- sact_3 |> 
+  filter(SEX %in% c(1,2)) %>% 
   mutate(sex_group = if_else(SEX == 2, "Female", "Male"), 
          age_group = case_when(between(AGE, 18, 44)  ~ "18-44",
                                between(AGE, 45, 64)  ~ "45-64",
@@ -100,7 +105,7 @@ sact_4 <- sact_3 |>
                          tnm == "3" ~ "III",
                          tnm == "4" ~ "IV",
                          TRUE ~ "Not recorded"),
-         ACE27 = if_else(ACE27 == 9 | is.na(ACE27), "Not recorded", as.character(ACE27)),
+         ACE27 = if_else(ACE27 == 9 | is.na(ACE27), "Not recorded", as.character(substr(ACE27,0,1))),
          com = as.factor(ACE27),
          Total = "total")
 
@@ -154,7 +159,6 @@ t1 <- A |> ungroup() |>
 t1 |> cat(file="t1.html")
 
 
-
 # Table 2 -----------------------------------------------------------------
 
 tmp <- bind_rows(sact_4 |> mutate(diag = "Total"), sact_4) |> 
@@ -167,7 +171,7 @@ t2 <- tmp |>
     glm(ttb ~ seps + age_group + sex_group + year + com + tnm, data=.x, family="binomial") |> 
       tidy(exponentiate=T, conf.int=T) |> 
       mutate(n=nrow(.x),ntrial=sum(.x$trial_all), type="adj"),
-    glm(ttb ~ seps, data=.x, family="binomial") |> 
+    glm(ttb ~ seps + age_group + sex_group + year, data=.x, family="binomial") |> 
       tidy(exponentiate=T, conf.int=T) |> 
       mutate(n=nrow(.x),ntrial=sum(.x$trial_all), type="crude"))) |> 
   filter(term=="sepsvulnerable") |> 
@@ -186,9 +190,7 @@ t2 |>
 
 # Table 3 (not required) --------------------------------------------------
 
-# Estimated to take 5-6 hours on a average labtop
-
-sact_4 <- sact_4[sample(nrow(sact_4),10000),]
+# Estimated to take 5-6 hours on a average laptop
 
 df <- bind_rows(sact_4, sact_4 |> mutate(diag = "Total")) |> 
   mutate(ttb = trial_all*1,
@@ -200,7 +202,7 @@ df <- bind_rows(sact_4, sact_4 |> mutate(diag = "Total")) |>
                            W = .x[,c("age_group","sex_group","year","com","tnm")],
                            Q.SL.library = "SL.randomForest",
                            family="binomial",
-                           V.Q = 3)
+                           V.Q = 5)
     tibble(estimate = tmle_fit$estimates$OR$psi,
            lower = tmle_fit$estimates$OR$CI[1],
            upper = tmle_fit$estimates$OR$CI[2],
