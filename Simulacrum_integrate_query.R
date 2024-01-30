@@ -1,7 +1,3 @@
-# beskrivelse
-#forfattere, dato, output, filnavne
-
-
 # Libraries and functions -------------------------------------------------
 
 
