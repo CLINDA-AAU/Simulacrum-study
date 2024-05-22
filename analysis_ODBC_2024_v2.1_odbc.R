@@ -50,9 +50,9 @@ CC_calc <- function(df, columnName) {
 
 my_oracle <- dbConnect(odbc::odbc(),
                        Driver = "Oracle in instantclient_21_12",
-                       DBQ = "localhost:1521/XEPDB1", 
+                       DBQ = "", 
                        UID = "system",
-                       PWD = "test1234",
+                       PWD = "",
                        trusted_connection = TRUE)
 
 # In the following "DGPDB_INT.SIM_*" should be replaced with the schema name
