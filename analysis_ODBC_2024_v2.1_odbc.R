@@ -8,6 +8,8 @@ library(lubridate)
 library(forestmodel)
 library(broom)
 library(knitr)
+library(DBI)
+library(odbc)
 
 rf <- function(data, dig = 2) {
   format(round(data, digits = dig), nsmall = dig)
@@ -46,29 +48,54 @@ CC_calc <- function(df, columnName) {
 
 # ODBC --------------------------------------------------------------------
 
+my_oracle <- dbConnect(odbc::odbc(),
+                       Driver = "Oracle in instantclient_21_12",
+                       DBQ = "localhost:1521/XEPDB1", 
+                       UID = "system",
+                       PWD = "test1234",
+                       trusted_connection = TRUE)
 
-# Temp --------------------------------------------------------------------
+# In the following "DGPDB_INT.SIM_*" should be replaced with the schema name
+# and correct table name
 
-av_tumour    <- read_csv("C:/Users/upc6/Desktop/simulacrum_v2.1.0/Data/sim_av_tumour.csv",
-                         col_select = c(PATIENTID, TUMOURID, DIAGNOSISDATEBEST, SITE_ICD10_O2_3CHAR, AGE, GENDER, QUINTILE_2019, STAGE_BEST, COMORBIDITIES_27_03))
+query1 <- "SELECT
+  st.CLINICAL_TRIAL,
+  st.ENCORE_PATIENT_ID,
+  st.START_DATE_OF_REGIMEN
+FROM
+  DGPDB_INT.SIM_SACT_REGIMEN st"
 
-sact_regimen <- read_csv("C:/Users/upc6/Desktop/simulacrum_v2.1.0/Data/sim_sact_regimen.csv",
-                         col_select = c(ENCORE_PATIENT_ID, CLINICAL_TRIAL, START_DATE_OF_REGIMEN))
-  
+query2 <- "SELECT
+  at.PATIENTID,
+  at.TUMOURID,
+  at.DIAGNOSISDATEBEST,
+  at.AGE, 
+  at.GENDER,
+  at.QUINTILE_2019,
+  at.STAGE_BEST,
+  at.COMORBIDITIES_27_03,
+  at.SITE_ICD10_O2_3CHAR
+FROM
+  DGPDB_INT.SIM_AV_TUMOUR at"
+
+
+sact_regimen <- dbGetQuery(my_oracle, query1)
+av_tumour <- dbGetQuery(my_oracle, query2)
+
+# Datamanagement ----------------------------------------------------------
 
 sact_1 <- sact_regimen  |> 
   mutate(trial_all = CLINICAL_TRIAL %in% c("y", "Y","01","1")) |> 
   group_by(ENCORE_PATIENT_ID) |> 
   summarize(trial_all = any(trial_all), 
-            date = min(START_DATE_OF_REGIMEN)) |> # Summary of all patients at first treatment, wether they recieve trial treatment
+            date = min(START_DATE_OF_REGIMEN)) |> 
   left_join(av_tumour, by = c("ENCORE_PATIENT_ID"="PATIENTID")) |> 
-  filter(date > DIAGNOSISDATEBEST) |> # only consider diagnoses before first treatment
+  filter(date > DIAGNOSISDATEBEST) |> # only include diagnoses before first treatment
   mutate(dif = difftime(date, DIAGNOSISDATEBEST)) |> 
   group_by(ENCORE_PATIENT_ID) |> 
-  filter(dif == min(dif)) |> # find diagnosis closest to first registred treatment 
-  filter(row_number() == 1) |> # remove diagnosis with similar diagnosisdates
+  filter(dif == min(dif)) |> # diagnosis closest to first registered treatment 
+  filter(row_number() == 1) |>  # remove diagnosis with duplicate diagnosis dates
   ungroup()
-# Datamanagement ----------------------------------------------------------
 
 sact_2 <- sact_1 |> 
   mutate(PD = SITE_ICD10_O2_3CHAR,
@@ -105,24 +132,25 @@ sact_4 <- sact_3 |>
                          tnm == "3" ~ "III",
                          tnm == "4" ~ "IV",
                          TRUE ~ "Not recorded"),
-         com = if_else(com>3,"4+",as.factor(as.character(com))),
+         com = if_else(com>3,"4+", as.factor(as.character(com))), 
          Total = "total")
 
 # Table 1 -----------------------------------------------------------------
 
 
 facts <- c("Total", "trial_all", "sex_group", "age_group", "seps", "diag", "com","tnm")
+facts2 <- c("Total", "trial_all", "sex_group", "age_group", "diag", "com","tnm")
 
 tmp <- bind_rows(sact_4 |> mutate(seps = "total"), sact_4) |> 
   mutate(Total = "tots",
-         seps = as.factor(seps),
          trial_all = as.character(trial_all),
+         seps = as.factor(seps),
          seps = fct_relevel(seps, c("total", "non-vulnerable", "vulnerable")))
 
 A <- tmp |> 
   dplyr::select(all_of(facts)) |> 
   pivot_longer(names_to = "group", values_to ="stratification",-seps) |> 
-  mutate(group = fct_relevel(group, facts)) |> 
+  mutate(group = fct_relevel(group, facts2)) |> 
   group_by(group, seps) |> 
   mutate(nn=n()) |> 
   group_by(group, stratification, seps) |> 
@@ -154,14 +182,15 @@ t1 <- A |> ungroup() |>
   add_row(.before = c(6),B[1,]) |> 
   left_join(C, by="group") |> 
   kable(format = "html")
-t1
+
 t1 |> cat(file="t1.html")
 
 
 # Table 2 -----------------------------------------------------------------
 
 tmp <- bind_rows(sact_4 |> mutate(diag = "Total"), sact_4) |> 
-  mutate(seps = fct_relevel(seps, c("total", "non-vulnerable", "vulnerable")))
+  mutate(seps = as.factor(seps),
+         seps = fct_relevel(seps, c("non-vulnerable", "vulnerable")))
 
 t2 <- tmp |> 
   mutate(ttb = trial_all*1) |> 
