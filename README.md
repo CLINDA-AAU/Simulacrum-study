@@ -1,8 +1,8 @@
 # Clinical trial participation for vulnerable cancer patients in Denmark and England
 
 This repo contains a guide to: 
-  1) download simulacrum
-  2) set up a oracle express database as a docker image 
+  1) Download simulacrum
+  2) Set up a oracle express database as a docker image 
   3) Download Dbeaver database manager
   4) Download and setup ODBC software for R
   5) Create a odbc connection to R studio
