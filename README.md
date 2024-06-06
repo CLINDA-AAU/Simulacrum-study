@@ -7,7 +7,7 @@ This repo contains a guide to:
   4) Download and setup ODBC software for R
   5) Create a odbc connection to R studio
 
-Please notice that in our example that R have been chosen as the programming language for the model. Oracla Express have been chosen as the database. Dbeaver have been chosen as database manager. 
+Please notice that in our example that R have been chosen as the programming language for the model. Oracle Express have been chosen as the database. Dbeaver have been chosen as database manager. 
 Except the database manager, there are restriction for what software can be used for access the Simulacrum service. 
 
 ### Disclaimers
